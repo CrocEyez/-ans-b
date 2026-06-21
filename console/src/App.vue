@@ -37,6 +37,7 @@ const adminLoading = ref(false)
 const submissionsLoading = ref(false)
 const approveLoading = ref(false)
 const rejectLoading = ref(false)
+const enterReviewLoading = ref(false)
 const submitMessage = ref('')
 const submitError = ref('')
 const askError = ref('')
@@ -50,6 +51,7 @@ const adminUser = ref(JSON.parse(window.localStorage.getItem('ans-b-admin-user')
 const reviewStatus = ref('pending')
 const submissions = ref([])
 const selectedSubmission = ref(null)
+const reviewEntered = ref(false)
 
 const statusOptions = [
   { value: 'pending', label: '待审核', emptyText: '暂无待审核投稿' },
@@ -77,6 +79,7 @@ const canLoginAdmin = computed(() => (
   adminForm.password.trim() &&
   !adminLoading.value
 ))
+const canEnterReview = computed(() => isAdminLoggedIn.value && !enterReviewLoading.value)
 const isReviewBusy = computed(() => approveLoading.value || rejectLoading.value)
 const isSelectedPending = computed(() => selectedSubmission.value?.status === 'pending')
 const canEditReviewForm = computed(() => isSelectedPending.value && !isReviewBusy.value)
@@ -124,6 +127,31 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function isAdminAuthError(error) {
+  const message = String(error?.message || '')
+  return message.includes('login session') ||
+    message.includes('missing current user') ||
+    message.includes('permission denied') ||
+    message.includes('HTTP 401')
+}
+
+function clearAdminSession() {
+  adminToken.value = ''
+  adminUser.value = null
+  submissions.value = []
+  selectedSubmission.value = null
+  reviewEntered.value = false
+  window.localStorage.removeItem('ans-b-admin-token')
+  window.localStorage.removeItem('ans-b-admin-user')
+}
+
+function handleAdminAuthError(error) {
+  if (!isAdminAuthError(error)) return false
+  clearAdminSession()
+  adminError.value = '管理员登录已失效，请重新登录'
+  return true
 }
 
 async function requestJSON(path, options = {}) {
@@ -175,8 +203,10 @@ async function loginAdmin() {
     window.localStorage.setItem('ans-b-admin-token', result.token)
     window.localStorage.setItem('ans-b-admin-user', JSON.stringify(result.user))
     adminForm.password = ''
-    adminMessage.value = `已登录：${result.user?.username || adminForm.username.trim()}`
-    await loadSubmissions()
+    reviewEntered.value = false
+    submissions.value = []
+    selectedSubmission.value = null
+    adminMessage.value = `已登录：${result.user?.username || adminForm.username.trim()}，请进入审核端`
   } catch (error) {
     adminError.value = error.message
   } finally {
@@ -185,12 +215,30 @@ async function loginAdmin() {
 }
 
 function logoutAdmin() {
-  adminToken.value = ''
-  adminUser.value = null
-  submissions.value = []
-  selectedSubmission.value = null
-  window.localStorage.removeItem('ans-b-admin-token')
-  window.localStorage.removeItem('ans-b-admin-user')
+  clearAdminSession()
+  adminMessage.value = ''
+  adminError.value = ''
+}
+
+async function enterReviewPanel() {
+  if (!canEnterReview.value) return
+
+  enterReviewLoading.value = true
+  adminError.value = ''
+  reviewError.value = ''
+  reviewMessage.value = ''
+
+  try {
+    const loaded = await loadSubmissions({ force: true, preserveFeedback: true })
+    if (loaded) {
+      reviewEntered.value = true
+      adminMessage.value = ''
+    } else if (!adminError.value) {
+      adminError.value = reviewError.value || '进入审核端失败'
+    }
+  } finally {
+    enterReviewLoading.value = false
+  }
 }
 
 function fillReviewForm(submission, options = {}) {
@@ -211,8 +259,8 @@ function fillReviewForm(submission, options = {}) {
 }
 
 async function loadSubmissions(options = {}) {
-  if (!isAdminLoggedIn.value) return
-  if (isReviewBusy.value && !options.force) return
+  if (!isAdminLoggedIn.value) return false
+  if (isReviewBusy.value && !options.force) return false
 
   const { preserveFeedback = false } = options
   submissionsLoading.value = true
@@ -229,11 +277,15 @@ async function loadSubmissions(options = {}) {
       allowBusy: options.force,
       clearFeedback: !preserveFeedback,
     })
+    return true
   } catch (error) {
     if (!preserveFeedback) {
       reviewMessage.value = ''
     }
-    reviewError.value = error.message
+    if (!handleAdminAuthError(error)) {
+      reviewError.value = error.message
+    }
+    return false
   } finally {
     submissionsLoading.value = false
   }
@@ -263,7 +315,9 @@ async function approveSubmission() {
     reviewMessage.value = '审核通过，已生成向量并进入知识库'
     await loadSubmissions({ preserveFeedback: true, force: true })
   } catch (error) {
-    reviewError.value = error.message
+    if (!handleAdminAuthError(error)) {
+      reviewError.value = error.message
+    }
   } finally {
     approveLoading.value = false
   }
@@ -287,7 +341,9 @@ async function rejectSubmission() {
     reviewMessage.value = '已驳回投稿'
     await loadSubmissions({ preserveFeedback: true, force: true })
   } catch (error) {
-    reviewError.value = error.message
+    if (!handleAdminAuthError(error)) {
+      reviewError.value = error.message
+    }
   } finally {
     rejectLoading.value = false
   }
@@ -350,7 +406,7 @@ function candidateBody(item) {
 
 onMounted(() => {
   if (isAdminLoggedIn.value) {
-    loadSubmissions()
+    adminMessage.value = `已登录：${adminUser.value?.username || '管理员'}，请进入审核端`
   }
 })
 </script>
@@ -365,9 +421,9 @@ onMounted(() => {
       <t-tag theme="primary" variant="light">API {{ apiBaseURL }}</t-tag>
     </header>
 
-    <section class="panel review-panel">
+    <section v-if="!reviewEntered" class="panel review-entry-panel">
       <div class="panel-title">
-        <h2>投稿审核</h2>
+        <h2>管理员审核入口</h2>
         <span>{{ isAdminLoggedIn ? `管理员 ${adminUser?.username || ''}` : '请先登录管理员账号' }}</span>
       </div>
 
@@ -394,7 +450,42 @@ onMounted(() => {
         </t-button>
       </div>
 
-      <div v-else class="review-layout">
+      <div v-else class="review-entry-actions">
+        <p>当前管理员已登录，进入后可审核学生投稿并执行入库操作。</p>
+        <div>
+          <t-button
+            theme="primary"
+            :loading="enterReviewLoading"
+            :disabled="!canEnterReview"
+            @click="enterReviewPanel"
+          >
+            进入审核端
+          </t-button>
+          <t-button variant="text" :disabled="enterReviewLoading" @click="logoutAdmin">退出</t-button>
+        </div>
+      </div>
+
+      <t-alert
+        v-if="adminMessage"
+        class="feedback"
+        theme="success"
+        :message="adminMessage"
+      />
+      <t-alert
+        v-if="adminError"
+        class="feedback"
+        theme="error"
+        :message="adminError"
+      />
+    </section>
+
+    <section v-else class="panel review-panel">
+      <div class="panel-title">
+        <h2>投稿审核</h2>
+        <span>管理员 {{ adminUser?.username || '' }}</span>
+      </div>
+
+      <div class="review-layout">
         <aside class="submission-list">
           <div class="submission-toolbar">
             <select
