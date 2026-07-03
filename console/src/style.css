@@ -70,7 +70,8 @@ body {
   border-radius: 8px;
 }
 
-.review-panel {
+.review-panel,
+.review-entry-panel {
   max-width: 1180px;
   margin: 0 auto 20px;
 }
@@ -107,6 +108,29 @@ body {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
+}
+
+.review-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.review-entry-actions p {
+  margin: 0;
+  color: #475467;
+  line-height: 1.6;
+}
+
+.review-entry-actions > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .review-layout {
@@ -430,9 +454,15 @@ body {
   }
 
   .login-row,
+  .review-entry-actions,
   .review-layout,
   .submission-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .review-entry-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .review-meta {

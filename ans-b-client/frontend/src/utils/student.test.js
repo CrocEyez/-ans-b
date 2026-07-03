@@ -7,6 +7,10 @@ describe('parseTags', () => {
   it('splits tags by commas and line breaks', () => {
     assert.deepEqual(parseTags('图书馆, 时间，借阅\n夜间'), ['图书馆', '时间', '借阅', '夜间'])
   })
+
+  it('drops empty and duplicate tags after trimming', () => {
+    assert.deepEqual(parseTags(' 图书馆，图书馆,, 时间 '), ['图书馆', '时间'])
+  })
 })
 
 describe('submissionStatusText', () => {

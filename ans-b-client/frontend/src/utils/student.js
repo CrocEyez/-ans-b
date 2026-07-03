@@ -5,10 +5,16 @@ const statusTextMap = {
 }
 
 export function parseTags(value) {
+  const seen = new Set()
+
   return String(value || '')
     .split(/[,，\n]/)
     .map((tag) => tag.trim())
-    .filter(Boolean)
+    .filter((tag) => {
+      if (!tag || seen.has(tag)) return false
+      seen.add(tag)
+      return true
+    })
 }
 
 export function submissionStatusText(status) {

@@ -29,6 +29,8 @@ const navItems = [
   { id: 'profile', label: '个人信息' },
 ]
 
+const CATEGORY_MAX_LENGTH = 100
+
 const activeView = ref('ask')
 const showDropdown = ref(false)
 const shellError = ref('')
@@ -67,10 +69,15 @@ const displayName = computed(() => (
   user.value.nickname || user.value.username || '用户'
 ))
 
+const categoryTooLong = computed(() => (
+  submissionForm.category.trim().length > CATEGORY_MAX_LENGTH
+))
+
 const submitDisabled = computed(() => (
   submitLoading.value ||
   !submissionForm.question.trim() ||
-  !submissionForm.answer.trim()
+  !submissionForm.answer.trim() ||
+  categoryTooLong.value
 ))
 
 function resetShellFeedback() {
@@ -162,6 +169,7 @@ async function submitContribution() {
 
 async function loadSubmissionHistory(options = {}) {
   const { quiet = false } = options
+  const previousSelectedID = selectedSubmissionID.value
   historyLoading.value = true
   if (!quiet) {
     historyError.value = ''
@@ -171,7 +179,10 @@ async function loadSubmissionHistory(options = {}) {
   try {
     const result = await ListMySubmissions()
     submissions.value = Array.isArray(result) ? result : []
-    selectedSubmissionID.value = submissions.value[0]?.id || null
+    const previousSelectionStillExists = submissions.value.some((item) => item.id === previousSelectedID)
+    selectedSubmissionID.value = previousSelectionStillExists
+      ? previousSelectedID
+      : submissions.value[0]?.id || null
   } catch (error) {
     if (!handleProtectedError(error, '获取投稿历史失败')) {
       historyError.value = errorMessage(error)
@@ -318,46 +329,78 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="form-grid">
-              <label class="field wide">
-                <span>问题</span>
-                <input v-model="submissionForm.question" type="text" placeholder="例如：图书馆周末几点闭馆？">
-              </label>
+            <form class="submission-form" @submit.prevent="submitContribution">
+              <div class="form-grid">
+                <label class="field wide">
+                  <span>问题</span>
+                  <input
+                    v-model="submissionForm.question"
+                    type="text"
+                    required
+                    autocomplete="off"
+                    placeholder="例如：图书馆周末几点闭馆？"
+                  >
+                </label>
 
-              <label class="field wide">
-                <span>答案</span>
-                <textarea v-model="submissionForm.answer" rows="5" placeholder="填写清晰、可验证的回答内容" />
-              </label>
+                <label class="field wide">
+                  <span>答案</span>
+                  <textarea
+                    v-model="submissionForm.answer"
+                    rows="5"
+                    required
+                    placeholder="填写清晰、可验证的回答内容"
+                  />
+                </label>
 
-              <label class="field">
-                <span>分类</span>
-                <input v-model="submissionForm.category" type="text" placeholder="例如：图书馆">
-              </label>
+                <label class="field">
+                  <span>分类</span>
+                  <input
+                    v-model="submissionForm.category"
+                    type="text"
+                    :maxlength="CATEGORY_MAX_LENGTH"
+                    autocomplete="off"
+                    placeholder="例如：图书馆"
+                  >
+                </label>
 
-              <label class="field">
-                <span>标签</span>
-                <input v-model="submissionForm.tags" type="text" placeholder="用逗号分隔多个标签">
-              </label>
+                <label class="field">
+                  <span>标签</span>
+                  <input
+                    v-model="submissionForm.tags"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="用逗号分隔多个标签"
+                  >
+                </label>
 
-              <label class="field wide">
-                <span>来源</span>
-                <input v-model="submissionForm.source" type="text" placeholder="官网链接、通知标题或线下窗口来源">
-              </label>
+                <label class="field wide">
+                  <span>来源</span>
+                  <input
+                    v-model="submissionForm.source"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="官网链接、通知标题或线下窗口来源"
+                  >
+                </label>
 
-              <label class="field wide">
-                <span>备注</span>
-                <textarea v-model="submissionForm.remark" rows="3" placeholder="可选，补充范围、日期或注意事项" />
-              </label>
-            </div>
+                <label class="field wide">
+                  <span>备注</span>
+                  <textarea v-model="submissionForm.remark" rows="3" placeholder="可选，补充范围、日期或注意事项" />
+                </label>
+              </div>
 
-            <p v-if="submitError" class="inline-feedback error">{{ submitError }}</p>
-            <p v-else-if="submitMessage" class="inline-feedback success">{{ submitMessage }}</p>
+              <p v-if="categoryTooLong" class="inline-feedback error">
+                分类不能超过 {{ CATEGORY_MAX_LENGTH }} 个字符。
+              </p>
+              <p v-else-if="submitError" class="inline-feedback error">{{ submitError }}</p>
+              <p v-else-if="submitMessage" class="inline-feedback success">{{ submitMessage }}</p>
 
-            <div class="panel-actions">
-              <button class="primary-btn" :disabled="submitDisabled" @click="submitContribution">
-                {{ submitLoading ? '提交中...' : '提交投稿' }}
-              </button>
-            </div>
+              <div class="panel-actions">
+                <button class="primary-btn" type="submit" :disabled="submitDisabled">
+                  {{ submitLoading ? '提交中...' : '提交投稿' }}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
 
@@ -374,6 +417,9 @@ onUnmounted(() => {
             </div>
 
             <p v-if="historyError" class="inline-feedback error">{{ historyError }}</p>
+            <div v-else-if="historyLoading && submissions.length === 0" class="empty-state">
+              正在加载投稿记录...
+            </div>
             <div v-else-if="!historyLoading && submissions.length === 0" class="empty-state">
               暂无投稿记录。
             </div>
@@ -800,6 +846,10 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+.submission-form {
+  margin: 0;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -882,6 +932,14 @@ onUnmounted(() => {
   margin: 10px 0;
   color: #475569;
   line-height: 1.5;
+}
+
+.history-item strong,
+.history-item p,
+.history-detail h3,
+.history-detail > p,
+.history-detail dd {
+  overflow-wrap: anywhere;
 }
 
 .history-item small {
