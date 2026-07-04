@@ -69,6 +69,7 @@ func RegisterRoutesWithDBEmbedderAndSessionStore(engine *gin.Engine, db *sql.DB,
 	userHandler := user.NewHandler(user.NewService(user.NewRepository(db)))
 	userHandler.RegisterRoutes(api.Group("/users"))
 	userHandler.RegisterProtectedRoutes(api.Group("/users", auth.Middleware(tokenManager, sessionStore, auth.RoleStudent)))
+	userHandler.RegisterAdminRoutes(api.Group("/admin/users", auth.Middleware(tokenManager, sessionStore, auth.RoleAdmin)))
 
 	analyticsService := analytics.NewService(analytics.NewRepository(db))
 
@@ -76,6 +77,7 @@ func RegisterRoutesWithDBEmbedderAndSessionStore(engine *gin.Engine, db *sql.DB,
 	qaService := qa.NewService(qa.NewRepository(db), embedder, generator)
 	qaService.SetAccessRecorder(analyticsService)
 	qa.NewHandler(qaService).RegisterRoutes(api.Group("/qa", auth.Middleware(tokenManager, sessionStore, auth.RoleStudent)))
+	qa.NewHandler(qaService).RegisterRoutes(api.Group("/admin/qa", auth.Middleware(tokenManager, sessionStore, auth.RoleAdmin)))
 	search.NewHandler(search.NewService(search.NewRepository())).RegisterRoutes(api.Group("/search"))
 	submissionHandler := submission.NewHandler(submission.NewService(
 		submission.NewRepository(db),

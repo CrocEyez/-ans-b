@@ -35,6 +35,9 @@ const activeView = ref('ask')
 const showDropdown = ref(false)
 const shellError = ref('')
 const shellNotice = ref('')
+const toastVisible = ref(false)
+const toastMessage = ref('')
+let toastTimer = null
 const user = ref({
   username: props.initialUser?.username || '',
   nickname: props.initialUser?.nickname || '',
@@ -83,6 +86,15 @@ const submitDisabled = computed(() => (
 function resetShellFeedback() {
   shellError.value = ''
   shellNotice.value = ''
+}
+
+function triggerToast(message) {
+  if (toastTimer) clearTimeout(toastTimer)
+  toastMessage.value = message
+  toastVisible.value = true
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false
+  }, 3000)
 }
 
 function switchView(viewID) {
@@ -149,8 +161,8 @@ async function submitContribution() {
       source: submissionForm.source.trim(),
       remark: submissionForm.remark.trim(),
     })
-    submitMessage.value = '投稿已提交，等待管理员审核。'
-    shellNotice.value = '投稿提交成功'
+    submitMessage.value = ''
+    triggerToast('投稿已提交，等待管理员审核')
     submissionForm.question = ''
     submissionForm.answer = ''
     submissionForm.category = ''
@@ -247,6 +259,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeDropdown)
+  if (toastTimer) clearTimeout(toastTimer)
 })
 </script>
 
@@ -256,8 +269,8 @@ onUnmounted(() => {
       <div class="shell-brand">
         <div class="shell-brand-mark">问</div>
         <div>
-          <div class="shell-brand-title">校园生活百事通</div>
-          <div class="shell-brand-subtitle">学生桌面客户端</div>
+<div class="shell-brand-title">Ans-b</div>
+<div class="shell-brand-subtitle">Ans-b</div>
         </div>
       </div>
 
@@ -290,25 +303,6 @@ onUnmounted(() => {
     </header>
 
     <main class="shell-main">
-      <aside class="shell-side-card">
-        <h2>欢迎回来</h2>
-        <p>{{ displayName }}，问答、投稿和审核进度都在这里。</p>
-        <dl class="shell-side-list">
-          <div>
-            <dt>登录身份</dt>
-            <dd>学生</dd>
-          </div>
-          <div>
-            <dt>账号</dt>
-            <dd>{{ user.username || '-' }}</dd>
-          </div>
-          <div>
-            <dt>当前入口</dt>
-            <dd>{{ navItems.find((item) => item.id === activeView)?.label }}</dd>
-          </div>
-        </dl>
-      </aside>
-
       <section class="shell-content">
         <p v-if="shellError" class="shell-banner error">{{ shellError }}</p>
         <p v-else-if="shellNotice" class="shell-banner success">{{ shellNotice }}</p>
@@ -393,7 +387,6 @@ onUnmounted(() => {
                 分类不能超过 {{ CATEGORY_MAX_LENGTH }} 个字符。
               </p>
               <p v-else-if="submitError" class="inline-feedback error">{{ submitError }}</p>
-              <p v-else-if="submitMessage" class="inline-feedback success">{{ submitMessage }}</p>
 
               <div class="panel-actions">
                 <button class="primary-btn" type="submit" :disabled="submitDisabled">
@@ -488,7 +481,6 @@ onUnmounted(() => {
             <div class="panel-head">
               <div>
                 <h2>热点问题</h2>
-                <p>该入口已经对接后端状态，当前按服务实际能力展示。</p>
               </div>
               <button class="secondary-btn" :disabled="hotLoading" @click="loadHotQuestionsStatus">
                 {{ hotLoading ? '检测中...' : '重新检测' }}
@@ -496,11 +488,21 @@ onUnmounted(() => {
             </div>
 
             <div v-if="hotLoading" class="empty-state">正在获取热点问题状态...</div>
-            <div v-else-if="hotState?.available" class="empty-state">
-              热点问题接口已可用，当前客户端已完成状态对齐，可继续扩展列表展示。
+            <div v-else-if="hotState?.available && hotState?.questions?.length" class="hot-list">
+              <div
+                v-for="(item, index) in hotState.questions"
+                :key="item.id"
+                class="hot-item"
+              >
+                <span class="hot-rank">{{ index + 1 }}</span>
+                <div class="hot-body">
+                  <p class="hot-question">{{ item.question }}</p>
+                  <span class="hot-count">{{ item.access_count }} 次访问</span>
+                </div>
+              </div>
             </div>
             <div v-else class="empty-state">
-              {{ hotState?.message || '热点问题功能开发中。' }}
+              {{ hotState?.message || '暂无热点问题数据' }}
             </div>
           </section>
         </div>
@@ -510,7 +512,6 @@ onUnmounted(() => {
             <div class="panel-head">
               <div>
                 <h2>个人信息</h2>
-                <p>此处数据直接来自 `/api/v1/users/me`。</p>
               </div>
               <button class="secondary-btn" :disabled="profileLoading" @click="refreshProfile">
                 {{ profileLoading ? '加载中...' : '刷新信息' }}
@@ -518,10 +519,6 @@ onUnmounted(() => {
             </div>
 
             <dl class="profile-grid">
-              <div>
-                <dt>昵称</dt>
-                <dd>{{ user.nickname || '-' }}</dd>
-              </div>
               <div>
                 <dt>账号</dt>
                 <dd>{{ user.username || '-' }}</dd>
@@ -535,6 +532,13 @@ onUnmounted(() => {
         </div>
       </section>
     </main>
+
+    <transition name="toast-fade">
+      <div v-if="toastVisible" class="toast-card">
+        <span class="toast-icon">✓</span>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -699,7 +703,7 @@ onUnmounted(() => {
 .shell-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   padding: 24px 28px 28px;
 }
@@ -1037,5 +1041,106 @@ onUnmounted(() => {
   .panel-head {
     flex-direction: column;
   }
+}
+
+/* ---- Toast Notification ---- */
+
+.toast-card {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  background: #ffffff;
+  border: 1px solid #d1fae5;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 14px;
+  color: #065f46;
+  pointer-events: none;
+}
+
+.toast-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #059669;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: all 0.35s ease;
+}
+
+.toast-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+}
+
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* ---- Hot Questions ---- */
+
+.hot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hot-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  transition: background 0.15s;
+}
+
+.hot-item:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.hot-rank {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f97316, #0ea5e9);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.hot-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.hot-question {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.hot-count {
+  font-size: 12px;
+  color: #94a3b8;
 }
 </style>

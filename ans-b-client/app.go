@@ -79,8 +79,15 @@ type Submission struct {
 }
 
 type HotQuestionsStatus struct {
-	Available bool   `json:"available"`
-	Message   string `json:"message"`
+	Available bool          `json:"available"`
+	Message   string        `json:"message"`
+	Questions []HotQuestion `json:"questions,omitempty"`
+}
+
+type HotQuestion struct {
+	ID          int64  `json:"id"`
+	Question    string `json:"question"`
+	AccessCount int64  `json:"access_count"`
 }
 
 // NewApp creates a new App application struct.
@@ -222,9 +229,22 @@ func (a *App) GetHotQuestionsStatus(limit int) (*HotQuestionsStatus, error) {
 	if apiErr := a.responseError(statusCode, envelope); apiErr != nil {
 		return nil, apiErr
 	}
+
+	var questions []HotQuestion
+	if len(envelope.Data) > 0 {
+		if err := json.Unmarshal(envelope.Data, &questions); err != nil {
+			log.Printf("warn: failed to parse hot questions: %v", err)
+			questions = nil
+		}
+	}
+	if questions == nil {
+		questions = []HotQuestion{}
+	}
+
 	return &HotQuestionsStatus{
 		Available: true,
 		Message:   strings.TrimSpace(envelope.Message),
+		Questions: questions,
 	}, nil
 }
 

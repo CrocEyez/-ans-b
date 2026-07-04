@@ -64,3 +64,48 @@ func (s *Service) Profile(ctx context.Context, id int64) (*User, error) {
 	}
 	return user, err
 }
+
+type ListInput struct {
+	Page     int
+	PageSize int
+}
+
+type ListResult struct {
+	Items    []User `json:"items"`
+	Total    int    `json:"total"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
+}
+
+func (s *Service) List(ctx context.Context, input ListInput) (*ListResult, error) {
+	if s == nil || s.repository == nil {
+		return nil, errors.New("user service is not configured")
+	}
+	if input.Page < 1 {
+		input.Page = 1
+	}
+	if input.PageSize < 1 || input.PageSize > 100 {
+		input.PageSize = 10
+	}
+
+	total, err := s.repository.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	offset := (input.Page - 1) * input.PageSize
+	users, err := s.repository.List(ctx, input.PageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	if users == nil {
+		users = []User{}
+	}
+
+	return &ListResult{
+		Items:    users,
+		Total:    total,
+		Page:     input.Page,
+		PageSize: input.PageSize,
+	}, nil
+}

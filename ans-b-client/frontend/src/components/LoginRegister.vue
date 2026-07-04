@@ -135,7 +135,7 @@ async function handleRegister() {
           </defs>
         </svg>
       </div>
-      <h1 class="brand-title">智问答</h1>
+      <h1 class="brand-title">Ans-b</h1>
       <p class="brand-subtitle">开始你的智能问答之旅</p>
     </div>
 

@@ -3,6 +3,7 @@ package user
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"ans-b/server/internal/auth"
 
@@ -23,6 +24,10 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup) {
 
 func (h *Handler) RegisterProtectedRoutes(group *gin.RouterGroup) {
 	group.GET("/me", h.Profile)
+}
+
+func (h *Handler) RegisterAdminRoutes(group *gin.RouterGroup) {
+	group.GET("", h.List)
 }
 
 func (h *Handler) Register(c *gin.Context) {
@@ -72,4 +77,34 @@ func (h *Handler) Profile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": profile})
+}
+
+func (h *Handler) List(c *gin.Context) {
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	if err != nil || pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	result, err := h.service.List(c.Request.Context(), ListInput{
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    50000,
+			"message": err.Error(),
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
+	})
 }

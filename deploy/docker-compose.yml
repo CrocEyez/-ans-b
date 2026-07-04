@@ -20,6 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    pull_policy: if_not_present
     container_name: campus-redis
     restart: unless-stopped
     ports:
@@ -52,6 +53,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    container_name: campus-server
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://campus:campus123@postgres:5432/campus_qa?sslmode=disable
+      EMBED_BASE_URL: http://embed-server:8000
+      REDIS_ADDR: redis:6379
+    ports:
+      - "23456:23456"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      embed-server:
+        condition: service_healthy
+
+  console:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.console
+      args:
+        VITE_API_BASE_URL: http://100.115.97.57:23456
+    container_name: campus-console
+    restart: unless-stopped
+    ports:
+      - "23457:80"
 
 volumes:
   campus_postgres_data:

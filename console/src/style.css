@@ -494,3 +494,256 @@ body {
     white-space: normal;
   }
 }
+
+/* ---- Knowledge Browse ---- */
+
+.knowledge-browse-panel {
+  margin-bottom: 20px;
+}
+
+.knowledge-table-wrap {
+  overflow-x: auto;
+}
+
+.knowledge-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.knowledge-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #475467;
+  background: #f9fafb;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.knowledge-table td {
+  padding: 10px 12px;
+  color: #1f2937;
+  border-bottom: 1px solid #f4f6f8;
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+.knowledge-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.knowledge-table .col-id {
+  width: 48px;
+  color: #667085;
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-table .col-question {
+  max-width: 200px;
+}
+
+.knowledge-table .col-answer {
+  max-width: 260px;
+  color: #475467;
+}
+
+.knowledge-table .col-category {
+  width: 90px;
+  white-space: nowrap;
+}
+
+.knowledge-table .col-tags {
+  width: 140px;
+}
+
+.knowledge-table .col-date {
+  width: 100px;
+  color: #667085;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tag-chip {
+  margin-right: 4px;
+  margin-bottom: 2px;
+}
+
+/* ---- Knowledge Pagination ---- */
+
+.knowledge-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f4f6f8;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: #667085;
+}
+
+.pagination-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination-jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.jump-input {
+  width: 52px;
+  padding: 4px 6px;
+  text-align: center;
+  font-size: 13px;
+  color: #1f2937;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.jump-input::-webkit-outer-spin-button,
+.jump-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.jump-input:focus {
+  border-color: #155bd4;
+}
+
+/* ---- Sidebar Layout ---- */
+
+.console-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  min-height: 100vh;
+  padding: 24px 16px;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+}
+
+.sidebar-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f4f6f8;
+}
+
+.sidebar-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.sidebar-header p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #475467;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-item:hover {
+  background: #f4f6f8;
+  color: #1f2937;
+}
+
+.nav-item.active {
+  background: #f5f8ff;
+  color: #155bd4;
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #f4f6f8;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  padding: 28px;
+  overflow-y: auto;
+}
+
+.main-content .panel {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* ---- User Table Columns ---- */
+
+.knowledge-table .col-username {
+  max-width: 200px;
+}
+
+.knowledge-table .col-nickname {
+  max-width: 200px;
+  color: #475467;
+}
+
+/* ---- Responsive Sidebar ---- */
+
+@media (max-width: 900px) {
+  .console-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    padding: 16px;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .nav-item {
+    width: auto;
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .main-content {
+    padding: 18px;
+  }
+}

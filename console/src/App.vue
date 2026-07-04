@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:23456'
+
+const activePanel = ref('review')
 
 const knowledgeForm = reactive({
   question: '',
@@ -53,6 +55,22 @@ const submissions = ref([])
 const selectedSubmission = ref(null)
 const reviewEntered = ref(false)
 
+const knowledgeItems = ref([])
+const knowledgeLoading = ref(false)
+const knowledgeError = ref('')
+const knowledgePage = ref(1)
+const knowledgeTotal = ref(0)
+const knowledgePageSize = 10
+const knowledgeJumpPage = ref(null)
+
+const users = ref([])
+const userLoading = ref(false)
+const userError = ref('')
+const userPage = ref(1)
+const userTotal = ref(0)
+const userPageSize = 10
+const userJumpPage = ref(null)
+
 const statusOptions = [
   { value: 'pending', label: '待审核', emptyText: '暂无待审核投稿' },
   { value: 'approved', label: '已通过', emptyText: '暂无已通过投稿' },
@@ -66,13 +84,21 @@ const statusThemeMap = {
   rejected: 'danger',
 }
 
+const navItems = [
+  { key: 'review', label: '审核面板' },
+  { key: 'entry', label: '知识录入' },
+  { key: 'qa', label: '问答测试' },
+  { key: 'knowledge', label: '知识库浏览' },
+  { key: 'users', label: '用户管理' },
+]
+
 const canSubmitKnowledge = computed(() => (
   knowledgeForm.question.trim() &&
   knowledgeForm.answer.trim() &&
   !submitLoading.value
 ))
 
-const canAsk = computed(() => askForm.question.trim() && !askLoading.value)
+const canAsk = computed(() => askForm.question.trim() && !askLoading.value && isAdminLoggedIn.value)
 const isAdminLoggedIn = computed(() => Boolean(adminToken.value))
 const canLoginAdmin = computed(() => (
   adminForm.username.trim() &&
@@ -98,6 +124,14 @@ const canRejectSubmission = computed(() => (
 const emptySubmissionText = computed(() => (
   statusOptions.find((item) => item.value === reviewStatus.value)?.emptyText || '暂无投稿'
 ))
+
+const totalKnowledgePages = computed(() =>
+  Math.max(1, Math.ceil(knowledgeTotal.value / knowledgePageSize))
+)
+
+const totalUserPages = computed(() =>
+  Math.max(1, Math.ceil(userTotal.value / userPageSize))
+)
 
 function parseTags(value) {
   return value
@@ -385,9 +419,13 @@ async function askQuestion() {
   askResult.value = null
 
   try {
-    askResult.value = await postJSON('/api/v1/qa/ask', {
-      question: askForm.question.trim(),
-      limit: 5,
+    askResult.value = await requestJSON('/api/v1/admin/qa/ask', {
+      method: 'POST',
+      payload: {
+        question: askForm.question.trim(),
+        limit: 5,
+      },
+      auth: true,
     })
   } catch (error) {
     askError.value = error.message
@@ -404,282 +442,348 @@ function candidateBody(item) {
   return item?.chunk_text || item?.answer || ''
 }
 
+async function loadKnowledge() {
+  knowledgeLoading.value = true
+  knowledgeError.value = ''
+
+  try {
+    const params = new URLSearchParams({
+      page: String(knowledgePage.value),
+      page_size: String(knowledgePageSize),
+      status: 'approved',
+    })
+    const result = await requestJSON(`/api/v1/knowledge?${params}`)
+    knowledgeItems.value = result.items || []
+    knowledgeTotal.value = result.total || 0
+  } catch (error) {
+    knowledgeError.value = error.message
+  } finally {
+    knowledgeLoading.value = false
+  }
+}
+
+function goToKnowledgePage(page) {
+  if (page < 1 || page > totalKnowledgePages.value) return
+  knowledgePage.value = page
+  loadKnowledge()
+}
+
+async function loadUsers() {
+  if (!isAdminLoggedIn.value) {
+    userError.value = '请先登录管理员账号'
+    return
+  }
+
+  userLoading.value = true
+  userError.value = ''
+
+  try {
+    const params = new URLSearchParams({
+      page: String(userPage.value),
+      page_size: String(userPageSize),
+    })
+    const result = await requestJSON(`/api/v1/admin/users?${params}`, { auth: true })
+    users.value = result.items || []
+    userTotal.value = result.total || 0
+  } catch (error) {
+    if (!handleAdminAuthError(error)) {
+      userError.value = error.message
+    }
+  } finally {
+    userLoading.value = false
+  }
+}
+
+function goToUserPage(page) {
+  if (page < 1 || page > totalUserPages.value) return
+  userPage.value = page
+  loadUsers()
+}
+
+watch(activePanel, (panel) => {
+  if (panel === 'review' && reviewEntered.value && isAdminLoggedIn.value) {
+    loadSubmissions()
+  }
+  if (panel === 'knowledge') {
+    loadKnowledge()
+  }
+  if (panel === 'users') {
+    loadUsers()
+  }
+})
+
 onMounted(() => {
   if (isAdminLoggedIn.value) {
     adminMessage.value = `已登录：${adminUser.value?.username || '管理员'}，请进入审核端`
   }
+  loadKnowledge()
 })
 </script>
 
 <template>
-  <main class="console-page">
-    <header class="console-header">
-      <div>
-        <h1>校园生活百事通 Console</h1>
-        <p>审核用户投稿，通过后进入知识库并生成向量。</p>
+  <div class="console-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>Console</h1>
+        <p>校园生活百事通</p>
       </div>
-      <t-tag theme="primary" variant="light">API {{ apiBaseURL }}</t-tag>
-    </header>
-
-    <section v-if="!reviewEntered" class="panel review-entry-panel">
-      <div class="panel-title">
-        <h2>管理员审核入口</h2>
-        <span>{{ isAdminLoggedIn ? `管理员 ${adminUser?.username || ''}` : '请先登录管理员账号' }}</span>
-      </div>
-
-      <div v-if="!isAdminLoggedIn" class="login-row">
-        <t-input
-          v-model="adminForm.username"
-          placeholder="管理员账号"
-          :disabled="adminLoading"
-        />
-        <t-input
-          v-model="adminForm.password"
-          type="password"
-          placeholder="管理员密码"
-          :disabled="adminLoading"
-          @keydown.enter.prevent="loginAdmin"
-        />
-        <t-button
-          theme="primary"
-          :loading="adminLoading"
-          :disabled="!canLoginAdmin"
-          @click="loginAdmin"
+      <nav class="sidebar-nav">
+        <button
+          v-for="item in navItems"
+          :key="item.key"
+          class="nav-item"
+          :class="{ active: activePanel === item.key }"
+          @click="activePanel = item.key"
         >
-          登录
-        </t-button>
+          {{ item.label }}
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <t-tag theme="primary" variant="light" size="small">API {{ apiBaseURL }}</t-tag>
       </div>
+    </aside>
 
-      <div v-else class="review-entry-actions">
-        <p>当前管理员已登录，进入后可审核学生投稿并执行入库操作。</p>
-        <div>
+    <main class="main-content">
+      <!-- 审核面板 -->
+      <section v-if="activePanel === 'review'" class="panel review-panel">
+        <div class="panel-title">
+          <h2>审核面板</h2>
+          <span>{{ isAdminLoggedIn ? `管理员 ${adminUser?.username || ''}` : '请先登录管理员账号' }}</span>
+        </div>
+
+        <div v-if="!isAdminLoggedIn" class="login-row">
+          <t-input
+            v-model="adminForm.username"
+            placeholder="管理员账号"
+            :disabled="adminLoading"
+          />
+          <t-input
+            v-model="adminForm.password"
+            type="password"
+            placeholder="管理员密码"
+            :disabled="adminLoading"
+            @keydown.enter.prevent="loginAdmin"
+          />
           <t-button
             theme="primary"
-            :loading="enterReviewLoading"
-            :disabled="!canEnterReview"
-            @click="enterReviewPanel"
+            :loading="adminLoading"
+            :disabled="!canLoginAdmin"
+            @click="loginAdmin"
           >
-            进入审核端
+            登录
           </t-button>
-          <t-button variant="text" :disabled="enterReviewLoading" @click="logoutAdmin">退出</t-button>
         </div>
-      </div>
 
-      <t-alert
-        v-if="adminMessage"
-        class="feedback"
-        theme="success"
-        :message="adminMessage"
-      />
-      <t-alert
-        v-if="adminError"
-        class="feedback"
-        theme="error"
-        :message="adminError"
-      />
-    </section>
-
-    <section v-else class="panel review-panel">
-      <div class="panel-title">
-        <h2>投稿审核</h2>
-        <span>管理员 {{ adminUser?.username || '' }}</span>
-      </div>
-
-      <div class="review-layout">
-        <aside class="submission-list">
-          <div class="submission-toolbar">
-            <select
-              v-model="reviewStatus"
-              class="status-select"
-              :disabled="submissionsLoading || isReviewBusy"
-              @change="loadSubmissions"
-            >
-              <option
-                v-for="option in statusOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
+        <div v-else-if="!reviewEntered" class="review-entry-actions">
+          <p>当前管理员已登录，进入后可审核学生投稿并执行入库操作。</p>
+          <div>
             <t-button
-              variant="outline"
-              :loading="submissionsLoading"
-              :disabled="submissionsLoading || isReviewBusy"
-              @click="loadSubmissions"
+              theme="primary"
+              :loading="enterReviewLoading"
+              :disabled="!canEnterReview"
+              @click="enterReviewPanel"
             >
-              刷新
+              进入审核端
             </t-button>
-            <t-button variant="text" :disabled="isReviewBusy" @click="logoutAdmin">退出</t-button>
+            <t-button variant="text" :disabled="enterReviewLoading" @click="logoutAdmin">退出</t-button>
           </div>
+        </div>
 
-          <div v-if="submissionsLoading" class="loading-state">
-            正在加载投稿...
-          </div>
-
-          <div v-else-if="!submissions.length" class="empty-state">
-            {{ emptySubmissionText }}
-          </div>
-
-          <button
-            v-for="submission in submissions"
-            :key="submission.id"
-            class="submission-item"
-            :class="{ active: selectedSubmission?.id === submission.id }"
-            type="button"
-            :disabled="isReviewBusy"
-            @click="fillReviewForm(submission)"
-          >
-            <strong>{{ submission.question }}</strong>
-            <span class="submission-summary">
-              <t-tag
-                size="small"
-                variant="light"
-                :theme="statusTheme(submission.status)"
+        <div v-else class="review-layout">
+          <aside class="submission-list">
+            <div class="submission-toolbar">
+              <select
+                v-model="reviewStatus"
+                class="status-select"
+                :disabled="submissionsLoading || isReviewBusy"
+                @change="loadSubmissions"
               >
-                {{ statusLabel(submission.status) }}
-              </t-tag>
-              #{{ submission.id }} · {{ formatDateTime(submission.created_at) }}
-            </span>
-          </button>
-        </aside>
-
-        <section class="review-detail">
-          <div v-if="selectedSubmission" class="review-form">
-            <div class="review-meta">
-              <div>
-                <span class="review-meta-label">状态</span>
-                <t-tag variant="light" :theme="statusTheme(selectedSubmission.status)">
-                  {{ statusLabel(selectedSubmission.status) }}
-                </t-tag>
-              </div>
-              <div>
-                <span class="review-meta-label">投稿编号</span>
-                <strong>#{{ selectedSubmission.id }}</strong>
-              </div>
-              <div>
-                <span class="review-meta-label">创建时间</span>
-                <strong>{{ formatDateTime(selectedSubmission.created_at) }}</strong>
-              </div>
-              <div>
-                <span class="review-meta-label">审核时间</span>
-                <strong>{{ formatDateTime(selectedSubmission.reviewed_at) }}</strong>
-              </div>
-              <div class="review-note-meta">
-                <span class="review-meta-label">审核备注</span>
-                <strong>{{ selectedSubmission.reviewer_note || '-' }}</strong>
-              </div>
+                <option
+                  v-for="option in statusOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <t-button
+                variant="outline"
+                :loading="submissionsLoading"
+                :disabled="submissionsLoading || isReviewBusy"
+                @click="loadSubmissions"
+              >
+                刷新
+              </t-button>
+              <t-button variant="text" :disabled="isReviewBusy" @click="logoutAdmin">退出</t-button>
             </div>
 
-            <t-form label-align="top" @submit.prevent>
-              <t-form-item label="问题">
-                <t-textarea
-                  v-model="reviewForm.question"
-                  :autosize="{ minRows: 2, maxRows: 4 }"
-                  :disabled="!canEditReviewForm"
-                />
-              </t-form-item>
-              <t-form-item label="答案">
-                <t-textarea
-                  v-model="reviewForm.answer"
-                  :autosize="{ minRows: 4, maxRows: 7 }"
-                  :disabled="!canEditReviewForm"
-                />
-              </t-form-item>
+            <div v-if="submissionsLoading" class="loading-state">
+              正在加载投稿...
+            </div>
 
-              <div class="form-row">
-                <t-form-item label="分类">
-                  <t-input
-                    v-model="reviewForm.category"
-                    :disabled="!canEditReviewForm"
-                  />
-                </t-form-item>
-                <t-form-item label="标签">
-                  <t-input
-                    v-model="reviewForm.tags"
-                    placeholder="食堂，营业时间"
-                    :disabled="!canEditReviewForm"
-                  />
-                </t-form-item>
-              </div>
+            <div v-else-if="!submissions.length" class="empty-state">
+              {{ emptySubmissionText }}
+            </div>
 
-              <div class="form-row">
-                <t-form-item label="来源">
-                  <t-input
-                    v-model="reviewForm.source"
-                    :disabled="!canEditReviewForm"
-                  />
-                </t-form-item>
-                <t-form-item label="备注">
-                  <t-input
-                    v-model="reviewForm.remark"
-                    :disabled="!canEditReviewForm"
-                  />
-                </t-form-item>
-              </div>
-
-              <t-form-item label="审核备注">
-                <t-input
-                  v-model="reviewForm.reviewerNote"
-                  placeholder="可填写通过或驳回原因"
-                  :disabled="!canEditReviewForm"
-                />
-              </t-form-item>
-
-              <div class="review-actions">
-                <t-button
-                  theme="success"
-                  :loading="approveLoading"
-                  :disabled="!canApproveSubmission"
-                  @click="approveSubmission"
+            <button
+              v-for="submission in submissions"
+              :key="submission.id"
+              class="submission-item"
+              :class="{ active: selectedSubmission?.id === submission.id }"
+              type="button"
+              :disabled="isReviewBusy"
+              @click="fillReviewForm(submission)"
+            >
+              <strong>{{ submission.question }}</strong>
+              <span class="submission-summary">
+                <t-tag
+                  size="small"
+                  variant="light"
+                  :theme="statusTheme(submission.status)"
                 >
-                  通过并入库
-                </t-button>
-                <t-button
-                  theme="danger"
-                  variant="outline"
-                  :loading="rejectLoading"
-                  :disabled="!canRejectSubmission"
-                  @click="rejectSubmission"
-                >
-                  驳回
-                </t-button>
+                  {{ statusLabel(submission.status) }}
+                </t-tag>
+                #{{ submission.id }} · {{ formatDateTime(submission.created_at) }}
+              </span>
+            </button>
+          </aside>
+
+          <section class="review-detail">
+            <div v-if="selectedSubmission" class="review-form">
+              <div class="review-meta">
+                <div>
+                  <span class="review-meta-label">状态</span>
+                  <t-tag variant="light" :theme="statusTheme(selectedSubmission.status)">
+                    {{ statusLabel(selectedSubmission.status) }}
+                  </t-tag>
+                </div>
+                <div>
+                  <span class="review-meta-label">投稿编号</span>
+                  <strong>#{{ selectedSubmission.id }}</strong>
+                </div>
+                <div>
+                  <span class="review-meta-label">创建时间</span>
+                  <strong>{{ formatDateTime(selectedSubmission.created_at) }}</strong>
+                </div>
+                <div>
+                  <span class="review-meta-label">审核时间</span>
+                  <strong>{{ formatDateTime(selectedSubmission.reviewed_at) }}</strong>
+                </div>
+                <div class="review-note-meta">
+                  <span class="review-meta-label">审核备注</span>
+                  <strong>{{ selectedSubmission.reviewer_note || '-' }}</strong>
+                </div>
               </div>
-            </t-form>
-          </div>
 
-          <div v-else class="empty-state">请选择一条投稿</div>
+              <t-form label-align="top" @submit.prevent>
+                <t-form-item label="问题">
+                  <t-textarea
+                    v-model="reviewForm.question"
+                    :autosize="{ minRows: 2, maxRows: 4 }"
+                    :disabled="!canEditReviewForm"
+                  />
+                </t-form-item>
+                <t-form-item label="答案">
+                  <t-textarea
+                    v-model="reviewForm.answer"
+                    :autosize="{ minRows: 4, maxRows: 7 }"
+                    :disabled="!canEditReviewForm"
+                  />
+                </t-form-item>
 
-          <t-alert
-            v-if="adminMessage"
-            class="feedback"
-            theme="success"
-            :message="adminMessage"
-          />
-          <t-alert
-            v-if="adminError"
-            class="feedback"
-            theme="error"
-            :message="adminError"
-          />
-          <t-alert
-            v-if="reviewMessage"
-            class="feedback"
-            theme="success"
-            :message="reviewMessage"
-          />
-          <t-alert
-            v-if="reviewError"
-            class="feedback"
-            theme="error"
-            :message="reviewError"
-          />
-        </section>
-      </div>
-    </section>
+                <div class="form-row">
+                  <t-form-item label="分类">
+                    <t-input
+                      v-model="reviewForm.category"
+                      :disabled="!canEditReviewForm"
+                    />
+                  </t-form-item>
+                  <t-form-item label="标签">
+                    <t-input
+                      v-model="reviewForm.tags"
+                      placeholder="食堂，营业时间"
+                      :disabled="!canEditReviewForm"
+                    />
+                  </t-form-item>
+                </div>
 
-    <section class="console-grid">
-      <section class="panel">
+                <div class="form-row">
+                  <t-form-item label="来源">
+                    <t-input
+                      v-model="reviewForm.source"
+                      :disabled="!canEditReviewForm"
+                    />
+                  </t-form-item>
+                  <t-form-item label="备注">
+                    <t-input
+                      v-model="reviewForm.remark"
+                      :disabled="!canEditReviewForm"
+                    />
+                  </t-form-item>
+                </div>
+
+                <t-form-item label="审核备注">
+                  <t-input
+                    v-model="reviewForm.reviewerNote"
+                    placeholder="可填写通过或驳回原因"
+                    :disabled="!canEditReviewForm"
+                  />
+                </t-form-item>
+
+                <div class="review-actions">
+                  <t-button
+                    theme="success"
+                    :loading="approveLoading"
+                    :disabled="!canApproveSubmission"
+                    @click="approveSubmission"
+                  >
+                    通过并入库
+                  </t-button>
+                  <t-button
+                    theme="danger"
+                    variant="outline"
+                    :loading="rejectLoading"
+                    :disabled="!canRejectSubmission"
+                    @click="rejectSubmission"
+                  >
+                    驳回
+                  </t-button>
+                </div>
+              </t-form>
+            </div>
+
+            <div v-else class="empty-state">请选择一条投稿</div>
+
+            <t-alert
+              v-if="adminMessage"
+              class="feedback"
+              theme="success"
+              :message="adminMessage"
+            />
+            <t-alert
+              v-if="adminError"
+              class="feedback"
+              theme="error"
+              :message="adminError"
+            />
+            <t-alert
+              v-if="reviewMessage"
+              class="feedback"
+              theme="success"
+              :message="reviewMessage"
+            />
+            <t-alert
+              v-if="reviewError"
+              class="feedback"
+              theme="error"
+              :message="reviewError"
+            />
+          </section>
+        </div>
+      </section>
+
+      <!-- 知识录入 -->
+      <section v-if="activePanel === 'entry'" class="panel">
         <div class="panel-title">
           <h2>知识录入</h2>
           <span>保存时会生成向量并入库</span>
@@ -763,7 +867,8 @@ onMounted(() => {
         />
       </section>
 
-      <section class="panel">
+      <!-- 问答测试 -->
+      <section v-if="activePanel === 'qa'" class="panel">
         <div class="panel-title">
           <h2>问答测试</h2>
           <span>请求返回前会锁定提问区</span>
@@ -885,6 +990,208 @@ onMounted(() => {
           </div>
         </div>
       </section>
-    </section>
-  </main>
+
+      <!-- 知识库浏览 -->
+      <section v-if="activePanel === 'knowledge'" class="panel knowledge-browse-panel">
+        <div class="panel-title">
+          <div>
+            <h2>知识库浏览</h2>
+            <span>共 {{ knowledgeTotal }} 条已录入知识</span>
+          </div>
+          <t-button
+            variant="outline"
+            size="small"
+            :loading="knowledgeLoading"
+            @click="loadKnowledge"
+          >
+            刷新
+          </t-button>
+        </div>
+
+        <div v-if="knowledgeLoading" class="loading-state">正在加载知识库...</div>
+
+        <t-alert
+          v-else-if="knowledgeError"
+          class="feedback"
+          theme="error"
+          :message="knowledgeError"
+        />
+
+        <div v-else-if="!knowledgeItems.length" class="empty-state">
+          知识库中暂无已录入的知识
+        </div>
+
+        <template v-else>
+          <div class="knowledge-table-wrap">
+            <table class="knowledge-table">
+              <thead>
+                <tr>
+                  <th class="col-id">#</th>
+                  <th class="col-question">问题</th>
+                  <th class="col-answer">答案</th>
+                  <th class="col-category">分类</th>
+                  <th class="col-tags">标签</th>
+                  <th class="col-date">录入时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in knowledgeItems" :key="item.id">
+                  <td class="col-id">{{ item.id }}</td>
+                  <td class="col-question">{{ item.question }}</td>
+                  <td class="col-answer">{{ item.answer }}</td>
+                  <td class="col-category">
+                    <t-tag v-if="item.category" size="small" variant="light">{{ item.category }}</t-tag>
+                    <span v-else>-</span>
+                  </td>
+                  <td class="col-tags">
+                    <t-tag v-for="tag in item.tags" :key="tag" size="small" variant="outline" class="tag-chip">{{ tag }}</t-tag>
+                    <span v-if="!item.tags?.length">-</span>
+                  </td>
+                  <td class="col-date">{{ formatDateTime(item.created_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="knowledge-pagination">
+            <span class="pagination-info">第 {{ knowledgePage }} / {{ totalKnowledgePages }} 页，共 {{ knowledgeTotal }} 条</span>
+            <div class="pagination-jump">
+              <span>跳至</span>
+              <input
+                type="number"
+                :min="1"
+                :max="totalKnowledgePages"
+                v-model.number="knowledgeJumpPage"
+                @keydown.enter="goToKnowledgePage(knowledgeJumpPage)"
+                class="jump-input"
+              />
+              <span>页</span>
+              <t-button
+                size="small"
+                variant="outline"
+                :disabled="!knowledgeJumpPage || knowledgeJumpPage < 1 || knowledgeJumpPage > totalKnowledgePages"
+                @click="goToKnowledgePage(knowledgeJumpPage)"
+              >
+                GO
+              </t-button>
+            </div>
+            <div class="pagination-btns">
+              <t-button
+                variant="outline"
+                size="small"
+                :disabled="knowledgePage <= 1"
+                @click="goToKnowledgePage(knowledgePage - 1)"
+              >
+                上一页
+              </t-button>
+              <t-button
+                variant="outline"
+                size="small"
+                :disabled="knowledgePage >= totalKnowledgePages"
+                @click="goToKnowledgePage(knowledgePage + 1)"
+              >
+                下一页
+              </t-button>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- 用户管理 -->
+      <section v-if="activePanel === 'users'" class="panel knowledge-browse-panel">
+        <div class="panel-title">
+          <div>
+            <h2>用户管理</h2>
+            <span>共 {{ userTotal }} 位注册用户</span>
+          </div>
+          <t-button
+            variant="outline"
+            size="small"
+            :loading="userLoading"
+            @click="loadUsers"
+          >
+            刷新
+          </t-button>
+        </div>
+
+        <div v-if="userLoading" class="loading-state">正在加载用户列表...</div>
+
+        <t-alert
+          v-else-if="userError"
+          class="feedback"
+          theme="error"
+          :message="userError"
+        />
+
+        <div v-else-if="!users.length" class="empty-state">
+          暂无注册用户
+        </div>
+
+        <template v-else>
+          <div class="knowledge-table-wrap">
+            <table class="knowledge-table">
+              <thead>
+                <tr>
+                  <th class="col-id">ID</th>
+                  <th class="col-username">用户名</th>
+                  <th class="col-nickname">昵称</th>
+                  <th class="col-date">注册时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="user in users" :key="user.id">
+                  <td class="col-id">{{ user.id }}</td>
+                  <td class="col-username">{{ user.username }}</td>
+                  <td class="col-nickname">{{ user.nickname || '-' }}</td>
+                  <td class="col-date">{{ formatDateTime(user.created_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="knowledge-pagination">
+            <span class="pagination-info">第 {{ userPage }} / {{ totalUserPages }} 页，共 {{ userTotal }} 条</span>
+            <div class="pagination-jump">
+              <span>跳至</span>
+              <input
+                type="number"
+                :min="1"
+                :max="totalUserPages"
+                v-model.number="userJumpPage"
+                @keydown.enter="goToUserPage(userJumpPage)"
+                class="jump-input"
+              />
+              <span>页</span>
+              <t-button
+                size="small"
+                variant="outline"
+                :disabled="!userJumpPage || userJumpPage < 1 || userJumpPage > totalUserPages"
+                @click="goToUserPage(userJumpPage)"
+              >
+                GO
+              </t-button>
+            </div>
+            <div class="pagination-btns">
+              <t-button
+                variant="outline"
+                size="small"
+                :disabled="userPage <= 1"
+                @click="goToUserPage(userPage - 1)"
+              >
+                上一页
+              </t-button>
+              <t-button
+                variant="outline"
+                size="small"
+                :disabled="userPage >= totalUserPages"
+                @click="goToUserPage(userPage + 1)"
+              >
+                下一页
+              </t-button>
+            </div>
+          </div>
+        </template>
+      </section>
+    </main>
+  </div>
 </template>
